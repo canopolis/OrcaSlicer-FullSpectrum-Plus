@@ -194,7 +194,7 @@ GLGizmoCut3D::GLGizmoCut3D(GLCanvas3D& parent, const std::string& icon_filename,
 
     m_connector_modes = { _u8L("Auto"), _u8L("Manual") };
 
-    m_connector_types = { _u8L("Plug"), _u8L("Dowel"), _u8L("Snap") };
+    m_connector_types = { _u8L("Plug"), _u8L("Dowel"), _u8L("Snap"), _u8L("Ball"), _u8L("Microchip") };
 
     m_connector_styles = { _u8L("Prism"), _u8L("Frustum")
 //              , _u8L("Claw")
@@ -637,7 +637,7 @@ void GLGizmoCut3D::render_move_center_input(int axis)
 
 bool GLGizmoCut3D::render_connect_type_radio_button(CutConnectorType type)
 {
-    ImGui::SameLine(type == CutConnectorType::Plug ? m_label_width : 0);
+    ImGui::SameLine((type == CutConnectorType::Plug || type == CutConnectorType::Ball) ? m_label_width : 0);
     ImGui::PushItemWidth(m_control_width);
     if (ImGui::RadioButton(m_connector_types[size_t(type)].c_str(), m_connector_type == type)) {
         m_connector_type = type;
@@ -1390,7 +1390,7 @@ void GLGizmoCut3D::update_raycasters_for_picking_transform()
         for (size_t i = 0; i < connectors.size(); ++i) {
             const CutConnector& connector = connectors[i];
 
-            float height = connector.height;
+            float height = connector.attribs.type == CutConnectorType::Ball ? 4.f * connector.radius : connector.height;
             // recalculate connector position to world position
             Vec3d pos = connector.pos + instance_offset;
             if (connector.attribs.type == CutConnectorType::Dowel &&
@@ -2258,6 +2258,19 @@ void GLGizmoCut3D::render_connectors_input_window(CutConnectors &connectors, flo
     bool type_changed = render_connect_type_radio_button(CutConnectorType::Plug);
     type_changed     |= render_connect_type_radio_button(CutConnectorType::Dowel);
     type_changed     |= render_connect_type_radio_button(CutConnectorType::Snap);
+    // FullSpectrum Plus: second row with the new joint types
+    ImGui::Dummy(ImVec2(0.f, 0.f));
+    type_changed     |= render_connect_type_radio_button(CutConnectorType::Ball);
+    type_changed     |= render_connect_type_radio_button(CutConnectorType::Microchip);
+    if (type_changed && (m_connector_type == CutConnectorType::Ball || m_connector_type == CutConnectorType::Microchip)) {
+        // Ball and Microchip are always round prisms
+        m_connector_style    = int(CutConnectorStyle::Prism);
+        m_connector_shape_id = int(CutConnectorShape::Circle);
+        apply_selected_connectors([this, &connectors](size_t idx) {
+            connectors[idx].attribs.style = CutConnectorStyle(m_connector_style);
+            connectors[idx].attribs.shape = CutConnectorShape(m_connector_shape_id);
+        });
+    }
     if (type_changed)
         apply_selected_connectors([this, &connectors] (size_t idx) { connectors[idx].attribs.type = CutConnectorType(m_connector_type); });
     ImGuiWrapper::pop_radio_style();
@@ -2271,7 +2284,8 @@ void GLGizmoCut3D::render_connectors_input_window(CutConnectors &connectors, flo
             apply_selected_connectors([this, &connectors](size_t idx) { connectors[idx].attribs.style = CutConnectorStyle(m_connector_style); });
     m_imgui->disabled_end();
 
-    m_imgui->disabled_begin(m_connector_type == CutConnectorType::Snap);
+    m_imgui->disabled_begin(m_connector_type == CutConnectorType::Snap || m_connector_type == CutConnectorType::Ball ||
+                            m_connector_type == CutConnectorType::Microchip);
         if (type_changed && m_connector_type == CutConnectorType::Snap) {
             m_connector_shape_id = int(CutConnectorShape::Circle);
             apply_selected_connectors([this, &connectors](size_t idx) { connectors[idx].attribs.shape = CutConnectorShape(m_connector_shape_id); });
@@ -2281,6 +2295,10 @@ void GLGizmoCut3D::render_connectors_input_window(CutConnectors &connectors, flo
     m_imgui->disabled_end();
 
     const float depth_min_value = m_connector_type == CutConnectorType::Snap ? m_connector_size : -0.1f;
+    if (m_connector_type == CutConnectorType::Microchip)
+        m_imgui->text_wrapped(_u8L("Microchip: Size = chip diameter, Depth = chip length (mm). The hole goes into the upper part; use Flip to change side."), m_label_width + m_editing_window_width);
+    if (m_connector_type == CutConnectorType::Ball)
+        m_imgui->text_wrapped(_u8L("Ball: Size = ball diameter. Depth is automatic (2 x size). Tolerance = clearance."), m_label_width + m_editing_window_width);
     if (render_slider_double_input(m_labels_map["Depth"], m_connector_depth_ratio, m_connector_depth_ratio_tolerance, depth_min_value))
         apply_selected_connectors([this, &connectors](size_t idx) {
             if (m_connector_depth_ratio > 0)
@@ -3105,7 +3123,7 @@ void GLGizmoCut3D::render_connectors()
     for (size_t i = 0; i < connectors.size(); ++i) {
         const CutConnector& connector = connectors[i];
 
-        float height = connector.height;
+        float height = connector.attribs.type == CutConnectorType::Ball ? 4.f * connector.radius : connector.height;
         // recalculate connector position to world position
         Vec3d pos = connector.pos + instance_offset + sla_shift * Vec3d::UnitZ();
 
@@ -3219,6 +3237,8 @@ void GLGizmoCut3D::apply_connectors_in_model(ModelObject* mo, int &dowels_count)
         for (CutConnector&connector : mo->cut_connectors) {
             connector.rotation_m = m_rotation_m;
 
+            if (connector.attribs.type == CutConnectorType::Ball)
+                connector.height = 4.f * connector.radius; // FullSpectrum Plus: keep the ball round
             if (connector.attribs.type == CutConnectorType::Dowel) {
                 if (connector.attribs.style == CutConnectorStyle::Prism)
                     connector.height *= 2;
@@ -3499,12 +3519,16 @@ void GLGizmoCut3D::reset_connectors()
 
 void GLGizmoCut3D::init_connector_shapes()
 {
-    for (const CutConnectorType& type : {CutConnectorType::Dowel, CutConnectorType::Plug, CutConnectorType::Snap})
+    for (const CutConnectorType& type : {CutConnectorType::Dowel, CutConnectorType::Plug, CutConnectorType::Snap,
+                                         CutConnectorType::Ball, CutConnectorType::Microchip})
         for (const CutConnectorStyle& style : {CutConnectorStyle::Frustum, CutConnectorStyle::Prism}) {
             if (type == CutConnectorType::Dowel && style == CutConnectorStyle::Frustum)
                 continue;
             for (const CutConnectorShape& shape : {CutConnectorShape::Circle, CutConnectorShape::Hexagon, CutConnectorShape::Square, CutConnectorShape::Triangle}) {
-                if (type == CutConnectorType::Snap && shape != CutConnectorShape::Circle)
+                if ((type == CutConnectorType::Snap || type == CutConnectorType::Ball || type == CutConnectorType::Microchip) &&
+                    shape != CutConnectorShape::Circle)
+                    continue;
+                if ((type == CutConnectorType::Ball || type == CutConnectorType::Microchip) && style != CutConnectorStyle::Prism)
                     continue;
                 const CutConnectorAttributes attribs = { type, style, shape };
                 indexed_triangle_set its = get_connector_mesh(attribs);
@@ -3818,7 +3842,11 @@ indexed_triangle_set GLGizmoCut3D::get_connector_mesh(CutConnectorAttributes con
         break;
     }
 
-    if (connector_attributes.type == CutConnectorType::Snap)
+    if (connector_attributes.type == CutConnectorType::Ball)
+        connector_mesh = its_make_ball_connector();
+    else if (connector_attributes.type == CutConnectorType::Microchip)
+        connector_mesh = its_make_cylinder(1.0, 1.0, (2 * PI / 360));
+    else if (connector_attributes.type == CutConnectorType::Snap)
         connector_mesh = its_make_snap(1.0, 1.0, m_snap_space_proportion, m_snap_bulge_proportion);
     else if (connector_attributes.style == CutConnectorStyle::Prism)
         connector_mesh = its_make_cylinder(1.0, 1.0, (2 * PI / sectorCount));

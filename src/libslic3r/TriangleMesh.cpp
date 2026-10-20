@@ -1109,6 +1109,32 @@ indexed_triangle_set its_make_pyramid(float base, float height)
 // to determine the granularity. 
 // Default angle is 1 degree.
 //FIXME better to discretize an Icosahedron recursively http://www.songho.ca/opengl/gl_sphere.html
+// FullSpectrum Plus ---------------------------------------------------------
+// Unit-space ball joint: stem cylinder from z=0 to z=0.75 and a sphere whose
+// center is at z=0.75, radius 1 in XY and 0.25 in Z. Scaled by (r, r, 4r) the
+// sphere becomes round with radius r and the total height is 4r.
+static indexed_triangle_set its_make_unit_ball_with_neck(double neck_ratio, double fa)
+{
+    indexed_triangle_set ball = its_make_sphere(1.0, fa);
+    for (Vec3f &v : ball.vertices) {
+        v.z() = v.z() * 0.25f + 0.75f;
+    }
+    indexed_triangle_set neck = its_make_cylinder(neck_ratio, 0.75, fa);
+    its_merge(ball, neck);
+    return ball;
+}
+
+indexed_triangle_set its_make_ball_connector(double stem_ratio, double fa)
+{
+    return its_make_unit_ball_with_neck(std::clamp(stem_ratio, 0.2, 0.95), fa);
+}
+
+indexed_triangle_set its_make_ball_socket(double entry_ratio, double fa)
+{
+    return its_make_unit_ball_with_neck(std::clamp(entry_ratio, 0.5, 1.0), fa);
+}
+// ---------------------------------------------------------------------------
+
 indexed_triangle_set its_make_sphere(double radius, double fa)
 {
     int   sectorCount = int(ceil(2. * M_PI / fa));

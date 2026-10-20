@@ -250,6 +250,8 @@ enum class CutConnectorType : int {
     Plug
     , Dowel
     , Snap
+    , Ball       // FullSpectrum Plus: ball joint (ball on lower part, snap socket in upper part)
+    , Microchip  // FullSpectrum Plus: blind cylindrical cavity for a microchip (no positive part)
     , Undef
 };
 

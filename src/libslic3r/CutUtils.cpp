@@ -38,8 +38,10 @@ static void apply_tolerance(ModelVolume* vol)
         rot_norm.normalize();
 
     double z_offset = 0.5 * static_cast<double>(cut_info.height_tolerance);
-    if (cut_info.connector_type == CutConnectorType::Plug || 
-        cut_info.connector_type == CutConnectorType::Snap)
+    if (cut_info.connector_type == CutConnectorType::Plug ||
+        cut_info.connector_type == CutConnectorType::Snap ||
+        cut_info.connector_type == CutConnectorType::Ball ||
+        cut_info.connector_type == CutConnectorType::Microchip)
         z_offset -= 0.05; // add small Z offset to better preview
 
     vol->set_offset(vol->get_offset() + rot_norm * z_offset);
@@ -98,8 +100,12 @@ static void process_connector_cut(  ModelVolume* volume, const Transform3d& inst
     if (volume->cut_info.connector_type != CutConnectorType::Dowel) {
         if (attributes.has(ModelObjectCutAttribute::KeepUpper)) {
             ModelVolume* vol = nullptr;
-            if (volume->cut_info.connector_type == CutConnectorType::Snap) {
-                TriangleMesh mesh = TriangleMesh(its_make_cylinder(1.0, 1.0, PI / 180.));
+            if (volume->cut_info.connector_type == CutConnectorType::Snap ||
+                volume->cut_info.connector_type == CutConnectorType::Ball) {
+                // Snap: plain cylinder hole. Ball (FullSpectrum Plus): sphere socket with a snap-in entry channel.
+                TriangleMesh mesh = volume->cut_info.connector_type == CutConnectorType::Ball ?
+                    TriangleMesh(its_make_ball_socket()) :
+                    TriangleMesh(its_make_cylinder(1.0, 1.0, PI / 180.));
 
                 vol = upper->add_volume(std::move(mesh));
                 vol->set_transformation(volume->get_transformation());
@@ -114,7 +120,9 @@ static void process_connector_cut(  ModelVolume* volume, const Transform3d& inst
             vol->set_transformation(volume_matrix);
             apply_tolerance(vol);
         }
-        if (attributes.has(ModelObjectCutAttribute::KeepLower)) {
+        // FullSpectrum Plus: a microchip cavity is only a hole in one part, nothing is added to the other part.
+        if (attributes.has(ModelObjectCutAttribute::KeepLower) &&
+            volume->cut_info.connector_type != CutConnectorType::Microchip) {
             ModelVolume* vol = lower->add_volume(*volume);
             vol->set_transformation(volume_matrix);
             // for lower part change type of connector from NEGATIVE_VOLUME to MODEL_PART if this connector is a plug

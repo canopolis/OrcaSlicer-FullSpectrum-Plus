@@ -2265,7 +2265,8 @@ static void cleanup_old_session_logs(const std::string &current_log_filename, si
 void GUI_App::init_app_config()
 {
 	// Profiles for the alpha are stored into the PrusaSlicer-alpha directory to not mix with the current release.
-    SetAppName(SLIC3R_APP_KEY);
+    // FullSpectrum Plus (v0.9.19+): own settings folder so it can live side by side with v0.9.18
+    SetAppName(SLIC3R_APP_KEY "_Plus");
 //	SetAppName(SLIC3R_APP_KEY "-alpha");
 //  SetAppName(SLIC3R_APP_KEY "-beta");
 //	SetAppDisplayName(SLIC3R_APP_NAME);

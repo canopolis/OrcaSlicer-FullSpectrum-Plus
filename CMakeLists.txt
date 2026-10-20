@@ -937,10 +937,10 @@ set (CPACK_PACKAGE_VENDOR "Snapmaker")
 set (CPACK_PACKAGE_VERSION_MAJOR "${ORCA_VERSION_MAJOR}")
 set (CPACK_PACKAGE_VERSION_MINOR "${ORCA_VERSION_MINOR}")
 set (CPACK_PACKAGE_VERSION_PATCH "${ORCA_VERSION_PATCH}")
-set (CPACK_PACKAGE_FILE_NAME "Snapmaker_Orca_Windows_Installer_V${FULLSPECTRUM_VERSION}")
+set (CPACK_PACKAGE_FILE_NAME "Snapmaker_Orca_Plus_Windows_Installer_V${FULLSPECTRUM_VERSION}")
 set (CPACK_PACKAGE_DESCRIPTION_SUMMARY "SnapmakerOrca-FullSpectrum is an open source slicer for FDM printers")
 set (CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/Snapmaker/OrcaSlicer")
-set (CPACK_PACKAGE_INSTALL_DIRECTORY ${CPACK_PACKAGE_NAME})
+set (CPACK_PACKAGE_INSTALL_DIRECTORY "Snapmaker_Orca_Plus")
 set (CPACK_PACKAGE_ICON "${CMAKE_SOURCE_DIR}/resources/images\\\\Snapmaker_Orca.ico")
 set (CPACK_NSIS_MUI_ICON "${CPACK_PACKAGE_ICON}")
 set (CPACK_NSIS_MUI_UNIICON "${CPACK_PACKAGE_ICON}")
@@ -964,14 +964,14 @@ SnapmakerOrcaPre_prompt:
   MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "Snapmaker Orca is still running.$\nClose the program, then click Retry to continue, or Cancel to exit the installer." IDRETRY SnapmakerOrcaPre_check_loop
   Abort
 SnapmakerOrcaPre_done:
-  ReadRegStr $0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Snapmaker_Orca" "UninstallString"
+  ReadRegStr $0 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Snapmaker_Orca_Plus" "UninstallString"
   StrCmp $0 "" SnapmakerOrcaPre_read_hkcu_uninst SnapmakerOrcaPre_has_uninst
 SnapmakerOrcaPre_read_hkcu_uninst:
-  ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Snapmaker_Orca" "UninstallString"
+  ReadRegStr $0 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Snapmaker_Orca_Plus" "UninstallString"
 SnapmakerOrcaPre_has_uninst:
   StrCmp $0 "" SnapmakerOrcaPre_finish
 
-  MessageBox MB_YESNOCANCEL|MB_ICONEXCLAMATION "Snapmaker_Orca is already installed.$\n$\nDo you want to uninstall the old version before installing the new one?" /SD IDYES IDYES SnapmakerOrcaPre_uninst IDNO SnapmakerOrcaPre_finish
+  MessageBox MB_YESNOCANCEL|MB_ICONEXCLAMATION "Snapmaker_Orca Plus is already installed.$\n$\nDo you want to uninstall the old version before installing the new one?" /SD IDYES IDYES SnapmakerOrcaPre_uninst IDNO SnapmakerOrcaPre_finish
   Abort
 
 SnapmakerOrcaPre_uninst:
@@ -1015,16 +1015,16 @@ file(READ "${CMAKE_SOURCE_DIR}/cmake/nsis/SnapmakerURLProtocols_install.nsh" CPA
 file(READ "${CMAKE_SOURCE_DIR}/cmake/nsis/SnapmakerURLProtocols_uninstall.nsh" CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS)
 set(CPACK_NSIS_CREATE_ICONS_EXTRA [=[
   SetShellVarContext current
-  CreateShortCut "$DESKTOP\SnapmakerOrca-FullSpectrum.lnk" "$INSTDIR\snapmaker-orca.exe" "" "$INSTDIR\snapmaker-orca.exe" 0
+  CreateShortCut "$DESKTOP\SnapmakerOrca-FullSpectrum-Plus.lnk" "$INSTDIR\snapmaker-orca.exe" "" "$INSTDIR\snapmaker-orca.exe" 0
   SetShellVarContext all
 ]=])
 set(CPACK_NSIS_DELETE_ICONS_EXTRA [=[
   SetShellVarContext current
-  Delete "$DESKTOP\SnapmakerOrca-FullSpectrum.lnk"
+  Delete "$DESKTOP\SnapmakerOrca-FullSpectrum-Plus.lnk"
   SetShellVarContext all
 ]=])
 set (CPACK_PACKAGE_CHECKSUM SHA256)
-set (CPACK_PACKAGE_INSTALL_REGISTRY_KEY "Snapmaker_Orca")
+set (CPACK_PACKAGE_INSTALL_REGISTRY_KEY "Snapmaker_Orca_Plus")
 set (CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL OFF)
 set (CPACK_NSIS_EXECUTABLES_DIRECTORY ".")
 # set (CPACK_NSIS_MODIFY_PATH "ON")

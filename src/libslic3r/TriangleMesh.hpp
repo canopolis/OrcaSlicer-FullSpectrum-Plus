@@ -343,6 +343,11 @@ indexed_triangle_set    its_make_frustum_dowel(double r, double h, int sectorCou
 indexed_triangle_set    its_make_pyramid(float base, float height);
 indexed_triangle_set    its_make_sphere(double radius, double fa);
 indexed_triangle_set    its_make_snap(double r, double h, float space_proportion = 0.25f, float bulge_proportion = 0.125f);
+// FullSpectrum Plus: ball joint connector meshes in unit space (x,y in [-1,1], z in [0,1]).
+// They are meant to be scaled by (r, r, 4r) so the ball is a true sphere of radius r.
+indexed_triangle_set    its_make_ball_connector(double stem_ratio = 0.6, double fa = (2*PI/90));
+// Socket (negative volume): sphere + entry channel. entry_ratio < 1 gives a snap-in retention.
+indexed_triangle_set    its_make_ball_socket(double entry_ratio = 0.92, double fa = (2*PI/90));
 indexed_triangle_set    its_make_groove_plane(const Groove &cur_groove, float rotate_radius, std::vector<Vec3d> &cur_groove_vertices);
 
 indexed_triangle_set        its_convex_hull(const std::vector<Vec3f> &pts);
