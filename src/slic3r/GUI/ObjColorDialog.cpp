@@ -1,3 +1,5 @@
+#include <wx/display.h>
+#include <wx/scrolwin.h>
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -458,6 +460,37 @@ void ObjColorDialog::on_dpi_changed(const wxRect& suggested_rect)
     this->Refresh();
 }
 
+// Opens the dialog at SIZE_SCALE of its natural size (width and height),
+// limited to the screen; the rest of the content scrolls.
+void ObjColorDialog::apply_scaled_size()
+{
+    if (!m_scroll || !GetSizer())
+        return;
+    m_scroll->FitInside();
+    const wxSize natural_client = GetSizer()->CalcMin();          // full content + buttons
+    const wxSize frame          = GetSize() - GetClientSize();    // title bar + borders
+    wxSize target(int(natural_client.x * SIZE_SCALE) + frame.x, int(natural_client.y * SIZE_SCALE) + frame.y);
+
+    const int display = wxDisplay::GetFromWindow(this);
+    const wxRect area = wxDisplay(display == wxNOT_FOUND ? 0 : (unsigned) display).GetClientArea();
+    target.x = std::min(target.x, area.width);
+    target.y = std::min(target.y, area.height);
+
+    SetMinSize(wxSize(FromDIP(200), FromDIP(150)));
+    SetSize(target);
+    Layout();
+    CenterOnParent();
+}
+
+void ObjColorDialog::refresh_scaled_layout()
+{
+    if (!m_scroll)
+        return;
+    m_scroll->FitInside();
+    m_scroll->Layout();
+    Layout();
+}
+
 ObjColorDialog::ObjColorDialog(wxWindow*                       parent,
                                std::vector<Slic3r::RGBA>&      input_colors,
                                bool                            is_single_color,
@@ -474,7 +507,7 @@ ObjColorDialog::ObjColorDialog(wxWindow*                       parent,
                     dialog_title,
                 wxDefaultPosition,
                 wxDefaultSize,
-                wxDEFAULT_DIALOG_STYLE)
+                wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)
     , m_filament_ids(filament_ids)
     , m_first_extruder_id(first_extruder_id)
 {
@@ -487,19 +520,27 @@ ObjColorDialog::ObjColorDialog(wxWindow*                       parent,
     m_line_top->SetBackgroundColour(wxColour(166, 169, 170));
 
     SetBackgroundColour(MFDTheme::dialog_background());
-    SetMinSize(wxSize(MIN_OBJCOLOR_DIALOG_WIDTH, -1));
 
-    m_panel_ObjColor = new ObjColorPanel(this, input_colors, is_single_color, import_context,
+    // The panel lives inside a scroll area so the dialog can open smaller
+    // than its content (SIZE_SCALE of the natural size).
+    m_scroll = new wxScrolledWindow(this, wxID_ANY, wxDefaultPosition, wxDefaultSize, wxHSCROLL | wxVSCROLL);
+    m_scroll->SetBackgroundColour(MFDTheme::dialog_background());
+    m_scroll->SetScrollRate(FromDIP(10), FromDIP(10));
+
+    m_panel_ObjColor = new ObjColorPanel(m_scroll, input_colors, is_single_color, import_context,
                                          extruder_colours, filament_ids, first_extruder_id,
                                          obj_filename);
 
-    auto main_sizer = new wxBoxSizer(wxVERTICAL);
-    main_sizer->Add(m_line_top, 0, wxEXPAND, 0);
-
     auto sizer_width = (int)(2.8 * OBJCOLOR_ITEM_WIDTH());
     sizer_width = sizer_width > MIN_OBJCOLOR_DIALOG_WIDTH ? sizer_width : MIN_OBJCOLOR_DIALOG_WIDTH;
-    main_sizer->SetMinSize(wxSize(sizer_width, -1));
-    main_sizer->Add(m_panel_ObjColor, 1, wxEXPAND | wxALL, 0);
+    auto scroll_sizer = new wxBoxSizer(wxVERTICAL);
+    scroll_sizer->SetMinSize(wxSize(sizer_width, -1));
+    scroll_sizer->Add(m_panel_ObjColor, 1, wxEXPAND | wxALL, 0);
+    m_scroll->SetSizer(scroll_sizer);
+
+    auto main_sizer = new wxBoxSizer(wxVERTICAL);
+    main_sizer->Add(m_line_top, 0, wxEXPAND, 0);
+    main_sizer->Add(m_scroll, 1, wxEXPAND | wxALL, 0);
 
     // Footer divider
     auto* footer_divider = new wxPanel(this, wxID_ANY, wxDefaultPosition, wxSize(-1, 1));
@@ -517,7 +558,7 @@ ObjColorDialog::ObjColorDialog(wxWindow*                       parent,
     }
     main_sizer->Add(btn_sizer, 0, wxTOP | wxBOTTOM | wxRIGHT | wxEXPAND, FromDIP(10));
     SetSizer(main_sizer);
-    main_sizer->SetSizeHints(this);
+    apply_scaled_size();
 
     if (this->FindWindowById(wxID_OK, this)) {
         this->FindWindowById(wxID_OK, this)->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
@@ -1917,7 +1958,9 @@ void ObjColorPanel::rebuild_color_table()
     refresh_generated_mix_previews();
     m_scrolledWindow->Thaw();
 
-    if (wxWindow* top = wxGetTopLevelParent(this)) {
+    if (auto* dlg = dynamic_cast<ObjColorDialog*>(wxGetTopLevelParent(this))) {
+        dlg->refresh_scaled_layout();
+    } else if (wxWindow* top = wxGetTopLevelParent(this)) {
         top->Layout();
         top->Fit();
     }
@@ -2478,7 +2521,9 @@ void ObjColorPanel::update_image_map_mode_ui()
 
     m_page_simple->Layout();
     Layout();
-    if (wxWindow* top = wxGetTopLevelParent(this); top != nullptr && top->GetSizer() != nullptr) {
+    if (auto* dlg = dynamic_cast<ObjColorDialog*>(wxGetTopLevelParent(this))) {
+        dlg->refresh_scaled_layout();
+    } else if (wxWindow* top = wxGetTopLevelParent(this); top != nullptr && top->GetSizer() != nullptr) {
         top->Layout();
         top->Fit();
     }

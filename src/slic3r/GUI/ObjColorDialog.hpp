@@ -299,8 +299,16 @@ public:
                    const wxString&                 dialog_title = wxString());
     wxBoxSizer* create_btn_sizer(long flags);
     void        on_dpi_changed(const wxRect& suggested_rect) override;
+    // Content changed: update the scroll area without resizing the dialog.
+    void        refresh_scaled_layout();
+
+    // The dialog opens at this fraction of its natural size (width and height);
+    // the rest of the content is reached with the scroll bars.
+    static constexpr double SIZE_SCALE = 0.60;
 
 private:
+    void                             apply_scaled_size();
+    wxScrolledWindow*                m_scroll = nullptr;
     ObjColorPanel*                   m_panel_ObjColor = nullptr;
     std::unordered_map<int, Button*> m_button_list;
     std::vector<unsigned char>&      m_filament_ids;
