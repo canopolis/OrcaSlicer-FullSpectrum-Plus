@@ -467,7 +467,13 @@ void ObjColorDialog::apply_scaled_size()
     if (!m_scroll || !GetSizer())
         return;
     m_scroll->FitInside();
+    // Natural size = the dialog as it was before (whole content visible):
+    // measure it with the scroll area forced to the full content size,
+    // then let the scroll area shrink again.
+    const wxSize content = m_scroll->GetSizer() ? m_scroll->GetSizer()->CalcMin() : wxSize(0, 0);
+    m_scroll->SetMinSize(content);
     const wxSize natural_client = GetSizer()->CalcMin();          // full content + buttons
+    m_scroll->SetMinSize(wxSize(-1, -1));
     const wxSize frame          = GetSize() - GetClientSize();    // title bar + borders
     wxSize target(int(natural_client.x * SIZE_SCALE) + frame.x, int(natural_client.y * SIZE_SCALE) + frame.y);
 
@@ -486,6 +492,13 @@ void ObjColorDialog::refresh_scaled_layout()
 {
     if (!m_scroll)
         return;
+    // While the dialog is still being built (not shown yet), content can grow:
+    // recompute the 60% size from the new natural size. Once shown, keep the
+    // size and only update the scroll area.
+    if (!IsShown()) {
+        apply_scaled_size();
+        return;
+    }
     m_scroll->FitInside();
     m_scroll->Layout();
     Layout();
