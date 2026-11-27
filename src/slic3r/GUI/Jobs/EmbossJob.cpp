@@ -2,12 +2,14 @@
 
 #include <stdexcept>
 #include <chrono>
+#include <cmath>
 #include <type_traits>
 #include <boost/log/trivial.hpp>
 
 #include <libslic3r/Model.hpp>
 #include <libslic3r/Format/OBJ.hpp> // load_obj for default mesh
 #include <libslic3r/CutSurface.hpp> // use surface cuts
+#include <libslic3r/ClipperUtils.hpp> // FullSpectrum Plus 0.9.23: union_ex for shape cleanup
 #include <libslic3r/BuildVolume.hpp> // create object
 #include <libslic3r/SLA/ReprojectPointsOnMesh.hpp>
 
@@ -1380,6 +1382,46 @@ TriangleMesh cut_surface(DataBase& input1, const SurfaceVolumeData& input2, cons
     if (was_canceled()) return {};
     if (shapes.empty())
         throw JobException(_u8L("Font doesn't have any shape for given text.").c_str());
+
+    // FullSpectrum Plus 0.9.23: clean the shape before the (slow) CGAL surface cut:
+    // merge overlapping fill/stroke shapes, drop tiny slivers, reduce contour points.
+    {
+        auto fs_count = [](const ExPolygons &exs) {
+            size_t pts = 0, contours = 0;
+            for (const ExPolygon &ex : exs) {
+                pts += ex.contour.points.size(); ++contours;
+                for (const Slic3r::Polygon &h : ex.holes) { pts += h.points.size(); ++contours; }
+            }
+            return std::make_pair(contours, pts);
+        };
+        double fs_scale = input1.shape.scale;
+        if (fs_scale > 0.) {
+            const double fs_tol      = 0.02 / fs_scale;                // 0.02 mm in shape units
+            const double fs_min_area = (0.15 / fs_scale) * (0.15 / fs_scale); // 0.15 x 0.15 mm
+            auto fs_before = fs_count(shapes);
+            ExPolygons fs_clean = union_ex(shapes);
+            fs_clean = expolygons_simplify(fs_clean, fs_tol);
+            ExPolygons fs_result;
+            fs_result.reserve(fs_clean.size());
+            for (ExPolygon &ex : fs_clean) {
+                if (ex.contour.points.size() < 3 || std::abs(ex.contour.area()) < fs_min_area)
+                    continue;
+                Slic3r::Polygons fs_holes;
+                for (Slic3r::Polygon &h : ex.holes)
+                    if (h.points.size() >= 3 && std::abs(h.area()) >= fs_min_area)
+                        fs_holes.emplace_back(std::move(h));
+                ex.holes = std::move(fs_holes);
+                fs_result.emplace_back(std::move(ex));
+            }
+            auto fs_after = fs_count(fs_result);
+            BOOST_LOG_TRIVIAL(info) << "FS surface: shape cleanup contours " << fs_before.first << " -> " << fs_after.first
+                                    << ", points " << fs_before.second << " -> " << fs_after.second
+                                    << ", scale=" << fs_scale;
+            if (!fs_result.empty())
+                shapes = std::move(fs_result);
+        }
+    }
+    if (was_canceled()) return {};
 
     indexed_triangle_set its = cut_surface_to_its(shapes, input2.transform, input2.sources, input1, was_canceled);
     if (was_canceled()) return {};    
