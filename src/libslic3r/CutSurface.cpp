@@ -24,6 +24,8 @@
 
 using namespace Slic3r;
 #include "ExPolygonsIndex.hpp"
+#include <chrono>
+#include <boost/log/trivial.hpp> // FullSpectrum Plus 0.9.23 timing
 #include <boost/next_prior.hpp>
 #include <CGAL/Polygon_mesh_processing/corefinement.h>
 #include <CGAL/Exact_integer.h>
@@ -543,6 +545,12 @@ SurfaceCut Slic3r::cut_surface(const ExPolygons &shapes,
     priv::store(projection, shapes_bb.center(), projection_ratio, DEBUG_OUTPUT_DIR + "projection_center.obj");
 #endif // DEBUG_OUTPUT_DIR
 
+    auto fs_t = std::chrono::steady_clock::now();
+    auto fs_lap = [&fs_t]() {
+        auto n = std::chrono::steady_clock::now();
+        long long ms = (long long) std::chrono::duration_cast<std::chrono::milliseconds>(n - fs_t).count();
+        fs_t = n;
+        return ms; };
     // for filttrate opposite triangles and a little more
     const float max_angle = 89.9f;
     priv::CutMeshes cgal_models; // source for patch
@@ -566,6 +574,7 @@ SurfaceCut Slic3r::cut_surface(const ExPolygons &shapes,
 #endif // DEBUG_OUTPUT_DIR
 
     priv::CutMesh cgal_shape = priv::to_cgal(shapes, projection);
+    long long fs_ms_prepare = fs_lap();
 #ifdef DEBUG_OUTPUT_DIR
     CGAL::IO::write_OFF(DEBUG_OUTPUT_DIR + "shape.off", cgal_shape); // only debug
 #endif // DEBUG_OUTPUT_DIR
@@ -584,7 +593,11 @@ SurfaceCut Slic3r::cut_surface(const ExPolygons &shapes,
         model_cuts.push_back(std::move(cutAOIs));
     }
 
+    long long fs_ms_cut = fs_lap();
     priv::SurfacePatches patches = priv::diff_models(model_cuts, cgal_models, cgal_neg_models, projection);
+    long long fs_ms_diff = fs_lap();
+    BOOST_LOG_TRIVIAL(info) << "FS surface: CGAL steps prepare_ms=" << fs_ms_prepare << " cut_from_model_ms=" << fs_ms_cut
+                            << " diff_models_ms=" << fs_ms_diff << " patches=" << patches.size();
 #ifdef DEBUG_OUTPUT_DIR
     priv::store(patches, DEBUG_OUTPUT_DIR + "patches/");
 #endif // DEBUG_OUTPUT_DIR
@@ -609,6 +622,7 @@ SurfaceCut Slic3r::cut_surface(const ExPolygons &shapes,
     std::vector<bool> use_patch = priv::select_patches(best_projection, patches, shapes, shapes_bb, s2i, model_cuts, cgal_models, projection);
     SurfaceCut result = merge_patches(patches, use_patch);
     //*/
+    BOOST_LOG_TRIVIAL(info) << "FS surface: CGAL steps select_merge_ms=" << fs_lap();
 
 #ifdef DEBUG_OUTPUT_DIR
     priv::store(result, DEBUG_OUTPUT_DIR + "result.obj", DEBUG_OUTPUT_DIR + "result_contours/");
