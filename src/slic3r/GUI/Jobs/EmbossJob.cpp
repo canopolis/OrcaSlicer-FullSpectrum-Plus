@@ -1,6 +1,7 @@
 #include "EmbossJob.hpp"
 
 #include <stdexcept>
+#include <chrono>
 #include <type_traits>
 #include <boost/log/trivial.hpp>
 
@@ -1197,6 +1198,11 @@ indexed_triangle_set cut_surface_to_its(const ExPolygons &shapes, const Transfor
     assert(!sources.empty());
     BoundingBox bb = get_extents(shapes);
     double shape_scale = input.shape.scale;
+    // FullSpectrum Plus 0.9.22: timing logs
+    auto fs_t0 = std::chrono::steady_clock::now();
+    auto fs_ms = [](std::chrono::steady_clock::time_point a) {
+        return (long long) std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - a).count(); };
+    size_t fs_src_tris = 0;
 
     const SurfaceVolumeData::ModelSource *biggest = &sources.front();
 
@@ -1206,6 +1212,8 @@ indexed_triangle_set cut_surface_to_its(const ExPolygons &shapes, const Transfor
     std::vector<indexed_triangle_set>  itss;
     itss.reserve(sources.size());
     for (const SurfaceVolumeData::ModelSource &s : sources) {
+        if (was_canceled()) return {};
+        fs_src_tris += s.mesh->its.indices.size();
         Transform3d mesh_tr_inv       = s.tr.inverse();
         Transform3d cut_projection_tr = mesh_tr_inv * tr;
         std::pair<float, float> z_range{0., 1.};
@@ -1223,8 +1231,13 @@ indexed_triangle_set cut_surface_to_its(const ExPolygons &shapes, const Transfor
         s_to_itss[source_index] = its_index;
         itss.emplace_back(std::move(its));
     }
+    size_t fs_aoi_tris = 0;
+    for (const indexed_triangle_set &i : itss) fs_aoi_tris += i.indices.size();
+    BOOST_LOG_TRIVIAL(info) << "FS surface: its_cut_AoI sources=" << sources.size() << " tris_in=" << fs_src_tris
+                            << " tris_out=" << fs_aoi_tris << " ms=" << fs_ms(fs_t0);
     if (itss.empty())
         return {};
+    if (was_canceled()) return {};
 
     Transform3d tr_inv = biggest->tr.inverse();
     Transform3d cut_projection_tr = tr_inv * tr;
@@ -1270,7 +1283,11 @@ indexed_triangle_set cut_surface_to_its(const ExPolygons &shapes, const Transfor
     }
 
     // Use CGAL to cut surface from triangle mesh
+    if (was_canceled()) return {};
+    auto fs_t1 = std::chrono::steady_clock::now();
     SurfaceCut cut = cut_surface(*shapes_ptr, itss, cut_projection, projection_ratio);
+    BOOST_LOG_TRIVIAL(info) << "FS surface: cut_surface(CGAL) ms=" << fs_ms(fs_t1) << " total_ms=" << fs_ms(fs_t0)
+                            << " canceled=" << (was_canceled() ? 1 : 0);
 
     if (is_text_reflected) {
         for (SurfaceCut::Contour &c : cut.contours)
