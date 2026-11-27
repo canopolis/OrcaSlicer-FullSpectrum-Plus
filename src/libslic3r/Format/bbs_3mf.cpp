@@ -8359,6 +8359,9 @@ public:
                 return;
             }
         }
+        // FullSpectrum Plus 0.9.22: Auto-Backup off (interval 0) -> do not clone/write the object mesh on every edit
+        if (m_interval <= 0)
+            return;
         // clone object
         auto model = object.get_model();
         auto o = m_temp_model.add_object(object);
