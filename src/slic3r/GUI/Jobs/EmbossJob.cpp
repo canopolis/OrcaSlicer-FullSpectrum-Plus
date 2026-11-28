@@ -9,7 +9,6 @@
 #include <libslic3r/Model.hpp>
 #include <libslic3r/Format/OBJ.hpp> // load_obj for default mesh
 #include <libslic3r/CutSurface.hpp> // use surface cuts
-#include <libslic3r/ClipperUtils.hpp> // FullSpectrum Plus 0.9.23: union_ex for shape cleanup
 #include <libslic3r/BuildVolume.hpp> // create object
 #include <libslic3r/SLA/ReprojectPointsOnMesh.hpp>
 
@@ -1265,13 +1264,24 @@ indexed_triangle_set cut_surface_to_its(const ExPolygons &shapes, const Transfor
     Transform3d             emboss_tr  = cut_projection_tr.inverse();
     BoundingBoxf3           mesh_bb_tr = mesh_bb.transformed(emboss_tr);
     std::pair<float, float> z_range{mesh_bb_tr.min.z(), mesh_bb_tr.max.z()};
-    OrthoProject cut_projection = create_projection_for_cut(cut_projection_tr, shape_scale, z_range);
     float projection_ratio = (-z_range.first + safe_extension) / 
                               (z_range.second - z_range.first + 2 * safe_extension);
 
     ExPolygons shapes_data; // is used only when text is reflected to reverse polygon points order
     const ExPolygons *shapes_ptr = &shapes;
     bool is_text_reflected = Slic3r::has_reflection(tr);
+
+    // FullSpectrum Plus 0.9.24: do the CGAL cut in the coordinate system of the shape (emboss frame),
+    // where the projection direction is exactly the Z axis. When the projection is oblique to the
+    // axes of the model, bounding boxes of the long projection walls overlap most of the model
+    // triangles and CGAL corefinement needs minutes and gigabytes of memory. Result is the same.
+    bool fs_aligned = !is_text_reflected && emboss_tr.linear().determinant() > 0.;
+    if (fs_aligned) {
+        for (indexed_triangle_set &its : itss)
+            its_transform(its, emboss_tr);
+    }
+    OrthoProject cut_projection = create_projection_for_cut(fs_aligned ? Transform3d::Identity() : cut_projection_tr, shape_scale, z_range);
+    BOOST_LOG_TRIVIAL(info) << "FS surface: aligned_cut=" << (fs_aligned ? 1 : 0);
     if (is_text_reflected) {
         // revert order of points in expolygons
         // CW --> CCW
@@ -1302,7 +1312,9 @@ indexed_triangle_set cut_surface_to_its(const ExPolygons &shapes, const Transfor
     if (was_canceled()) return {};
 
     // !! Projection needs to transform cut
-    OrthoProject3d projection = create_emboss_projection(input.is_outside, input.shape.projection.depth, emboss_tr, cut);
+    // FullSpectrum Plus 0.9.24: aligned cut is already in the emboss coordinate system
+    OrthoProject3d projection = create_emboss_projection(input.is_outside, input.shape.projection.depth,
+                                                         fs_aligned ? Transform3d::Identity() : emboss_tr, cut);
     return cut2model(cut, projection);
 }
 
@@ -1382,46 +1394,6 @@ TriangleMesh cut_surface(DataBase& input1, const SurfaceVolumeData& input2, cons
     if (was_canceled()) return {};
     if (shapes.empty())
         throw JobException(_u8L("Font doesn't have any shape for given text.").c_str());
-
-    // FullSpectrum Plus 0.9.23: clean the shape before the (slow) CGAL surface cut:
-    // merge overlapping fill/stroke shapes, drop tiny slivers, reduce contour points.
-    {
-        auto fs_count = [](const ExPolygons &exs) {
-            size_t pts = 0, contours = 0;
-            for (const ExPolygon &ex : exs) {
-                pts += ex.contour.points.size(); ++contours;
-                for (const Slic3r::Polygon &h : ex.holes) { pts += h.points.size(); ++contours; }
-            }
-            return std::make_pair(contours, pts);
-        };
-        double fs_scale = input1.shape.scale;
-        if (fs_scale > 0.) {
-            const double fs_tol      = 0.02 / fs_scale;                // 0.02 mm in shape units
-            const double fs_min_area = (0.15 / fs_scale) * (0.15 / fs_scale); // 0.15 x 0.15 mm
-            auto fs_before = fs_count(shapes);
-            ExPolygons fs_clean = union_ex(shapes);
-            fs_clean = expolygons_simplify(fs_clean, fs_tol);
-            ExPolygons fs_result;
-            fs_result.reserve(fs_clean.size());
-            for (ExPolygon &ex : fs_clean) {
-                if (ex.contour.points.size() < 3 || std::abs(ex.contour.area()) < fs_min_area)
-                    continue;
-                Slic3r::Polygons fs_holes;
-                for (Slic3r::Polygon &h : ex.holes)
-                    if (h.points.size() >= 3 && std::abs(h.area()) >= fs_min_area)
-                        fs_holes.emplace_back(std::move(h));
-                ex.holes = std::move(fs_holes);
-                fs_result.emplace_back(std::move(ex));
-            }
-            auto fs_after = fs_count(fs_result);
-            BOOST_LOG_TRIVIAL(info) << "FS surface: shape cleanup contours " << fs_before.first << " -> " << fs_after.first
-                                    << ", points " << fs_before.second << " -> " << fs_after.second
-                                    << ", scale=" << fs_scale;
-            if (!fs_result.empty())
-                shapes = std::move(fs_result);
-        }
-    }
-    if (was_canceled()) return {};
 
     indexed_triangle_set its = cut_surface_to_its(shapes, input2.transform, input2.sources, input1, was_canceled);
     if (was_canceled()) return {};    
