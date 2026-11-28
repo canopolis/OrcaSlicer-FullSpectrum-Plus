@@ -1433,7 +1433,10 @@ priv::CutAOIs priv::cut_from_model(CutMesh                &cgal_model,
                         .edge_is_constrained_map(ecm)
                         .throw_on_self_intersection(false);
     const auto& q = CGAL::parameters::do_not_modify(true);
+    auto fs_c0 = std::chrono::steady_clock::now();
+    auto fs_cms = [&fs_c0]() { auto n = std::chrono::steady_clock::now(); long long ms = (long long) std::chrono::duration_cast<std::chrono::milliseconds>(n - fs_c0).count(); fs_c0 = n; return ms; };
     CGAL::Polygon_mesh_processing::corefine(cgal_model, cgal_shape, p, q);
+    long long fs_ms_corefine = fs_cms();
 
     if (!is_valid) return {};
 
@@ -1441,12 +1444,16 @@ priv::CutAOIs priv::cut_from_model(CutMesh                &cgal_model,
 
     // Select inside and outside face in model
     set_face_type(face_type_map, cgal_model, vert_shape_map, ecm, cgal_shape, s2i);
+    long long fs_ms_face_type = fs_cms();
 #ifdef DEBUG_OUTPUT_DIR
     store(cgal_model, face_type_map, DEBUG_OUTPUT_DIR + "constrained/"); // only debug
 #endif // DEBUG_OUTPUT_DIR
     
     // flood fill the other faces inside the region.
     flood_fill_inner(cgal_model, face_type_map);
+    long long fs_ms_flood = fs_cms();
+    BOOST_LOG_TRIVIAL(info) << "FS surface: cut_from_model corefine_ms=" << fs_ms_corefine << " face_type_ms=" << fs_ms_face_type
+                            << " flood_ms=" << fs_ms_flood << " faces=" << cgal_model.number_of_faces();
 
 #ifdef DEBUG_OUTPUT_DIR
     store(cgal_model, face_type_map, DEBUG_OUTPUT_DIR + "filled/", true); // only debug
